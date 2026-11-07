@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1026">
+<title>Star Catch</title>
+<style>
+  :root{
+    --sky-1:#0b1026; --sky-2:#1b2357; --sky-3:#3a2a6b;
+    --ink:#f4f1ff; --muted:#a9a6c9; --gold:#ffd447; --rose:#ff5d8f; --mint:#5ef2c2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;overflow:hidden;background:var(--sky-1);color:var(--ink);
+    font-family:ui-rounded,"Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:none;}
+  canvas{display:block;width:100vw;height:100vh;}
+  .hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;
+    padding:calc(14px + env(safe-area-inset-top)) 20px 14px;pointer-events:none;font-weight:800;}
+  .hud .score{font-size:clamp(24px,5vw,40px);letter-spacing:.02em;text-shadow:0 2px 12px rgba(0,0,0,.4);}
+  .hud .lives{font-size:clamp(20px,4vw,32px);letter-spacing:.12em;}
+  .panel{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;text-align:center;padding:24px;background:rgba(8,10,30,.55);backdrop-filter:blur(4px);
+    -webkit-backdrop-filter:blur(4px);transition:opacity .25s ease;}
+  .panel[hidden]{display:none;}
+  .panel h1{font-size:clamp(44px,10vw,88px);line-height:1;letter-spacing:-.02em;color:var(--gold);}
+  .panel p{color:var(--muted);font-size:clamp(16px,3.2vw,22px);max-width:28ch;line-height:1.45;}
+  .panel .big{color:var(--ink);font-size:clamp(28px,6vw,48px);font-weight:800;}
+  .btn{pointer-events:auto;border:0;cursor:pointer;font:inherit;font-weight:800;font-size:clamp(20px,4vw,28px);
+    color:#1a1230;padding:16px 44px;border-radius:999px;background:var(--gold);
+    box-shadow:0 6px 16px rgba(0,0,0,.35),inset 0 -3px 0 rgba(0,0,0,.15);transition:transform .12s ease;}
+  .btn:active{transform:scale(.96);}
+  .legend{display:flex;gap:22px;color:var(--muted);font-size:clamp(14px,2.8vw,18px);}
+  .legend b{color:var(--ink);}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud"><div class="score" id="score">0</div><div class="lives" id="lives">♥♥♥</div></div>
+
+<div class="panel" id="start">
+  <h1>Star Catch</h1>
+  <p>Fais glisser le panier pour attraper les étoiles. Évite les bombes !</p>
+  <div class="legend"><span>⭐ <b>+1</b></span><span>🌟 <b>+5</b></span><span>💣 <b>−1 vie</b></span></div>
+  <button class="btn" id="play">Jouer</button>
+  <p id="best0"></p>
+</div>
+
+<div class="panel" id="over" hidden>
+  <h1>Partie finie</h1>
+  <p class="big" id="final">0</p>
+  <p id="best"></p>
+  <button class="btn" id="again">Rejouer</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var cv = document.getElementById("c"), ctx = cv.getContext("2d");
+  var $score = document.getElementById("score"), $lives = document.getElementById("lives");
+  var $start = document.getElementById("start"), $over = document.getElementById("over");
+  var W = 0, H = 0, DPR = 1, unit = 1;
+
+  function store(k, v){ try{ if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); }catch(e){ return null; } }
+  var best = parseInt(store("starcatch:best") || "0", 10) || 0;
+  document.getElementById("best0").textContent = best ? "Record : " + best : "";
+
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    unit = Math.min(W, H) / 100;
+    basket.w = unit * 22; basket.h = unit * 7; basket.y = H - unit * 14;
+    basket.x = Math.min(Math.max(basket.x || W / 2, basket.w / 2), W - basket.w / 2);
+    makeSky();
+  }
+
+  // Ciel étoilé de fond (fixe, scintillant)
+  var sky = [];
+  function makeSky(){
+    sky = [];
+    var n = Math.round(W * H / 9000);
+    for (var i = 0; i < n; i++) sky.push({x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.6 + .3, p: Math.random() * 6.28});
+  }
+
+  var basket = {x: 0, y: 0, w: 0, h: 0, tx: null};
+  var items = [], sparks = [];
+  var state = "menu", score = 0, lives = 3, t = 0, spawnIn = 0, speed = 1, shake = 0, last = 0;
+
+  function reset(){
+    items = []; sparks = []; score = 0; lives = 3; speed = 1; spawnIn = .6; shake = 0;
+    basket.x = W / 2; basket.tx = null; hud();
+  }
+  function hud(){
+    $score.textContent = score;
+    $lives.textContent = "♥♥♥".slice(0, lives) + "♡♡♡".slice(0, 3 - lives);
+  }
+
+  function spawn(){
+    var r = Math.random(), kind = r < .16 + Math.min(speed - 1, 1.2) * .12 ? "bomb" : (r > .93 ? "big" : "star");
+    var size = unit * (kind === "big" ? 5.4 : kind === "bomb" ? 4.6 : 4);
+    items.push({
+      kind: kind, x: size + Math.random() * (W - 2 * size), y: -size, s: size,
+      vy: (unit * 32 + Math.random() * unit * 18) * speed, rot: Math.random() * 6.28, vr: (Math.random() - .5) * 3
+    });
+  }
+
+  function burst(x, y, color, n){
+    for (var i = 0; i < n; i++){
+      var a = Math.random() * 6.28, v = unit * (8 + Math.random() * 26);
+      sparks.push({x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - unit * 10, life: .6 + Math.random() * .4, c: color});
+    }
+  }
+
+  function step(dt){
+    t += dt;
+    if (state !== "play") return;
+    speed = 1 + Math.min(score / 60, 2.2);
+    spawnIn -= dt;
+    if (spawnIn <= 0){ spawn(); spawnIn = Math.max(.28, .85 - score / 140) * (.7 + Math.random() * .6); }
+
+    if (basket.tx !== null) basket.x += (basket.tx - basket.x) * Math.min(1, dt * 18);
+    basket.x = Math.min(Math.max(basket.x, basket.w / 2), W - basket.w / 2);
+
+    for (var i = items.length - 1; i >= 0; i--){
+      var it = items[i];
+      it.y += it.vy * dt; it.rot += it.vr * dt;
+      var top = basket.y - basket.h / 2;
+      if (it.y + it.s * .5 >= top && it.y - it.s * .5 <= basket.y + basket.h / 2 &&
+          Math.abs(it.x - basket.x) < basket.w / 2 + it.s * .25){
+        items.splice(i, 1);
+        if (it.kind === "bomb"){
+          lives--; shake = .35; burst(it.x, top, "#ff5d8f", 26);
+          if (lives <= 0){ end(); return; }
+        } else {
+          score += it.kind === "big" ? 5 : 1;
+          burst(it.x, top, it.kind === "big" ? "#5ef2c2" : "#ffd447", it.kind === "big" ? 22 : 12);
+        }
+        hud();
+      } else if (it.y - it.s > H){
+        items.splice(i, 1);
+      }
+    }
+    for (var j = sparks.length - 1; j >= 0; j--){
+      var s = sparks[j];
+      s.life -= dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += unit * 60 * dt;
+      if (s.life <= 0) sparks.splice(j, 1);
+    }
+    if (shake > 0) shake -= dt;
+  }
+
+  function starPath(x, y, r, rot){
+    ctx.beginPath();
+    for (var i = 0; i < 10; i++){
+      var rr = i % 2 ? r * .45 : r, a = rot + i * Math.PI / 5 - Math.PI / 2;
+      ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    ctx.closePath();
+  }
+
+  function draw(){
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#0b1026"); g.addColorStop(.6, "#1b2357"); g.addColorStop(1, "#3a2a6b");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    for (var k = 0; k < sky.length; k++){
+      var p = sky[k];
+      ctx.globalAlpha = .35 + .35 * Math.sin(t * 1.7 + p.p);
+      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.save();
+    if (shake > 0) ctx.translate((Math.random() - .5) * unit * 2.4, (Math.random() - .5) * unit * 2.4);
+
+    for (var i = 0; i < items.length; i++){
+      var it = items[i];
+      if (it.kind === "bomb"){
+        ctx.fillStyle = "#2a2440"; ctx.beginPath(); ctx.arc(it.x, it.y, it.s * .5, 0, 6.28); ctx.fill();
+        ctx.strokeStyle = "#ff5d8f"; ctx.lineWidth = unit * .6; ctx.stroke();
+        ctx.strokeStyle = "#c9b98a"; ctx.lineWidth = unit * .5;
+        ctx.beginPath(); ctx.moveTo(it.x + it.s * .25, it.y - it.s * .4);
+        ctx.quadraticCurveTo(it.x + it.s * .5, it.y - it.s * .75, it.x + it.s * .35, it.y - it.s * .85); ctx.stroke();
+        ctx.fillStyle = (t * 10 | 0) % 2 ? "#ffd447" : "#ff9f43";
+        ctx.beginPath(); ctx.arc(it.x + it.s * .35, it.y - it.s * .88, unit * .9, 0, 6.28); ctx.fill();
+      } else {
+        var big = it.kind === "big";
+        ctx.shadowColor = big ? "rgba(94,242,194,.8)" : "rgba(255,212,71,.75)"; ctx.shadowBlur = unit * 3;
+        starPath(it.x, it.y, it.s * .55, it.rot);
+        ctx.fillStyle = big ? "#5ef2c2" : "#ffd447"; ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    for (var j = 0; j < sparks.length; j++){
+      var s = sparks[j];
+      ctx.globalAlpha = Math.max(0, s.life); ctx.fillStyle = s.c;
+      ctx.fillRect(s.x - unit * .5, s.y - unit * .5, unit, unit);
+    }
+    ctx.globalAlpha = 1;
+
+    // Panier
+    var bx = basket.x, by = basket.y, bw = basket.w, bh = basket.h;
+    ctx.fillStyle = "rgba(0,0,0,.25)";
+    ctx.beginPath(); ctx.ellipse(bx, by + bh * .75, bw * .48, bh * .22, 0, 0, 6.28); ctx.fill();
+    var bg = ctx.createLinearGradient(0, by - bh / 2, 0, by + bh / 2);
+    bg.addColorStop(0, "#ffb347"); bg.addColorStop(1, "#e0662f");
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.moveTo(bx - bw / 2, by - bh / 2); ctx.lineTo(bx + bw / 2, by - bh / 2);
+    ctx.lineTo(bx + bw * .4, by + bh / 2); ctx.lineTo(bx - bw * .4, by + bh / 2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#ffd447"; ctx.fillRect(bx - bw / 2, by - bh / 2 - unit * .6, bw, unit * 1.2);
+    ctx.restore();
+  }
+
+  function loop(now){
+    var dt = Math.min(.05, (now - (last || now)) / 1000); last = now;
+    step(dt); draw();
+    requestAnimationFrame(loop);
+  }
+
+  function start(){ reset(); state = "play"; $start.hidden = true; $over.hidden = true; }
+  function end(){
+    state = "over";
+    if (score > best){ best = score; store("starcatch:best", String(best)); }
+    document.getElementById("final").textContent = score + (score > 1 ? " étoiles" : " étoile");
+    document.getElementById("best").textContent = "Record : " + best;
+    $over.hidden = false;
+  }
+
+  function pointer(e){
+    if (state !== "play") return;
+    var x = e.touches && e.touches.length ? e.touches[0].clientX : e.clientX;
+    if (typeof x === "number") basket.tx = x;
+    if (e.cancelable) e.preventDefault();
+  }
+  cv.addEventListener("touchstart", pointer, {passive: false});
+  cv.addEventListener("touchmove", pointer, {passive: false});
+  cv.addEventListener("mousemove", pointer);
+  cv.addEventListener("mousedown", pointer);
+  window.addEventListener("keydown", function(e){
+    if (state !== "play") return;
+    if (e.key === "ArrowLeft") basket.tx = (basket.tx === null ? basket.x : basket.tx) - unit * 12;
+    if (e.key === "ArrowRight") basket.tx = (basket.tx === null ? basket.x : basket.tx) + unit * 12;
+  });
+  document.getElementById("play").addEventListener("click", start);
+  document.getElementById("again").addEventListener("click", start);
+  window.addEventListener("resize", resize);
+
+  resize(); reset();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
