@@ -1,0 +1,50 @@
+{
+  "timing": {
+    "initialDelaySeconds": 5,
+    "showDurationSeconds": 10,
+    "repeatEverySeconds": 4
+  },
+  "videos": [
+    "https://mohammedelkhalfy-dot.github.io/ad-test-assets/video01.mp4",
+    "https://mohammedelkhalfy-dot.github.io/ad-test-assets/video02.mp4",
+    "https://mohammedelkhalfy-dot.github.io/ad-test-assets/video03.mp4"
+  ],
+  "asins": [
+    "B0TEST0001",
+    "B0TEST0002",
+    "B0TEST0003"
+  ],
+  "video": {
+    "autoplay": true,
+    "loop": true,
+    "muted": true,
+    "controls": false,
+    "widthPercent": 94,
+    "maxWidthDp": 760,
+    "contentScale": "fit",
+    "cornerRadiusDp": 24
+  },
+  "button": {
+    "text": "Download For Free",
+    "backgroundColor": "#FFD400",
+    "textColor": "#000000",
+    "textSizeSp": 18,
+    "widthPercent": 94,
+    "maxWidthDp": 760,
+    "marginDp": 6,
+    "cornerRadiusDp": 16,
+    "gravity": "center"
+  },
+  "countdown": {
+    "seconds": 10,
+    "style": "circle",
+    "position": "topRight",
+    "autoCloseAtZero": true
+  },
+  "overlay": {
+    "scrimColor": "#D1000000",
+    "dismissOnOutsideTap": false,
+    "gravity": "center",
+    "paddingDp": 0
+  }
+}
