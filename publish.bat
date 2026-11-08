@@ -19,6 +19,6 @@ if errorlevel 1 (
 
 echo.
 echo === Liens a copier ^(actifs ~1-2 min apres^) ===
-for /f "delims=" %%f in ('git ls-files "*.mp4"') do echo https://mohammedelkhalfy-dot.github.io/ad-test-assets/%%f
+for /f "delims=" %%f in ('git ls-files "*.mp4" "*.webm" "*.png" "*.jpg" "*.jpeg" "*.webp" "*.gif"') do echo https://mohammedelkhalfy-dot.github.io/ad-test-assets/%%f
 echo.
 pause
